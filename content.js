@@ -1,0 +1,412 @@
+function format(seconds, includeSeconds = true) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${h}h ${m}m ${includeSeconds ? `${s}s` : ""}`;
+}
+
+function getTodayKey() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getWeekKey() {
+  const date = new Date();
+  const firstThursday = new Date(
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7) + 3)
+  );
+  const weekNumber = Math.ceil(
+    ((firstThursday - new Date(firstThursday.getFullYear(), 0, 1)) / 86400000 + 1) / 7
+  );
+  return `${firstThursday.getFullYear()}-W${String(weekNumber).padStart(2, "0")}`;
+}
+
+/* ===== Blocking settings ===== */
+
+let blockSettings = {
+  blockSideRecommendations: false,
+  blockHomeRecommendations: false
+};
+
+function loadBlockSettings() {
+  chrome.storage.local.get(
+    ["blockSideRecommendations", "blockHomeRecommendations"],
+    (data) => {
+      blockSettings.blockSideRecommendations = data.blockSideRecommendations || false;
+      blockSettings.blockHomeRecommendations = data.blockHomeRecommendations || false;
+      applyBlockingFeatures();
+    }
+  );
+}
+
+// Listen for settings changes
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.blockSideRecommendations || changes.blockHomeRecommendations) {
+    loadBlockSettings();
+  }
+});
+
+/* ===== Shorts blocking (always on) ===== */
+
+function redirectIfShorts() {
+  if (location.pathname.startsWith("/shorts")) {
+    location.replace("/");
+  }
+}
+
+function isShortsElement(node) {
+  if (!(node instanceof HTMLElement)) return false;
+  
+  // Sidebar Shorts entry
+  if (node.tagName === "YTD-GUIDE-ENTRY-RENDERER") {
+    const link = node.querySelector('a[title="Shorts"]');
+    const title = node.querySelector("yt-formatted-string.title");
+    if (link || (title && title.textContent?.trim() === "Shorts")) {
+      return true;
+    }
+  }
+  
+  // Mini sidebar Shorts entry
+  if (node.tagName === "YTD-MINI-GUIDE-ENTRY-RENDERER") {
+    const title = node.querySelector("span.title");
+    if (title && title.textContent?.trim() === "Shorts") {
+      return true;
+    }
+  }
+  
+  // Shorts shelf on home/subscriptions
+  if (node.tagName === "YTD-REEL-SHELF-RENDERER") return true;
+  if (node.tagName === "YTD-RICH-SHELF-RENDERER") {
+    const title = node.querySelector("#title");
+    if (title && title.textContent?.toLowerCase().includes("shorts")) {
+      return true;
+    }
+  }
+  
+  // Shorts links in grids
+  if (node.tagName === "A" && node.href?.includes("/shorts/")) return true;
+  if (node.tagName === "YTD-RICH-ITEM-RENDERER") {
+    const link = node.querySelector('a[href*="/shorts/"]');
+    if (link) return true;
+  }
+  
+  return false;
+}
+
+/* ===== Side recommendations blocking ===== */
+
+function isSideRecommendation(node) {
+  if (!(node instanceof HTMLElement)) return false;
+  if (location.pathname !== "/watch") return false;
+  
+  if (node.id === "related") return true;
+  if (node.tagName === "YTD-WATCH-NEXT-SECONDARY-RESULTS-RENDERER") return true;
+  
+  return false;
+}
+
+/* ===== Home recommendations blocking ===== */
+
+function isHomeRecommendation(node) {
+  if (!(node instanceof HTMLElement)) return false;
+  if (location.pathname !== "/" && !location.pathname.startsWith("/feed")) return false;
+  
+  if (node.tagName === "YTD-RICH-GRID-RENDERER") return true;
+  if (node.tagName === "YTD-RICH-SECTION-RENDERER") return true;
+  if (node.tagName === "YTD-RICH-ITEM-RENDERER") return true;
+  
+  return false;
+}
+
+function showHomeBlockedMessage() {
+  if (location.pathname !== "/" && !location.pathname.startsWith("/feed")) return;
+  if (document.querySelector("#yt-home-blocked")) return;
+  
+  const msg = document.createElement("div");
+  msg.id = "yt-home-blocked";
+  msg.innerHTML = `
+    <div class="yt-home-blocked-icon">🎯</div>
+    <h2>Home Feed Blocked</h2>
+    <p>Stay focused. Search for what you need.</p>
+  `;
+  document.body.appendChild(msg);
+}
+
+function hideHomeBlockedMessage() {
+  const msg = document.querySelector("#yt-home-blocked");
+  if (msg) msg.remove();
+}
+
+/* ===== Apply blocking features ===== */
+
+function shouldRemoveNode(node) {
+  // Always block shorts
+  if (isShortsElement(node)) return true;
+  
+  // Conditionally block side recommendations
+  if (blockSettings.blockSideRecommendations && isSideRecommendation(node)) {
+    return true;
+  }
+  
+  // Conditionally block home recommendations
+  if (blockSettings.blockHomeRecommendations && isHomeRecommendation(node)) {
+    showHomeBlockedMessage();
+    return true;
+  }
+  
+  return false;
+}
+
+function sweepAndRemove(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  const toRemove = [];
+  
+  while (walker.nextNode()) {
+    if (shouldRemoveNode(walker.currentNode)) {
+      toRemove.push(walker.currentNode);
+    }
+  }
+  
+  toRemove.forEach((el) => el.remove());
+}
+
+function isOnHomePage() {
+  return location.pathname === "/" || location.pathname.startsWith("/feed");
+}
+
+function applyBlockingFeatures() {
+  // Redirect if on shorts page
+  redirectIfShorts();
+  
+  // Handle home blocked message - hide if not on home or if setting is off
+  if (!blockSettings.blockHomeRecommendations || !isOnHomePage()) {
+    hideHomeBlockedMessage();
+  }
+  
+  // Sweep existing elements
+  sweepAndRemove(document.body);
+}
+
+// Initial load
+loadBlockSettings();
+redirectIfShorts();
+
+/* ===== Create header UI ===== */
+
+const tracker = document.createElement("div");
+tracker.id = "yt-time-tracker";
+tracker.innerHTML = `
+  <div class="yt-time-item">
+    <span class="label">Watch</span>
+    <span class="value" id="yt-watch-today">0h 0m 0s</span>
+  </div>
+  <div class="divider"></div>
+  <div class="yt-time-item">
+    <span class="label">Total</span>
+    <span class="value" id="yt-total-today">0h 0m 0s</span>
+  </div>
+  <div class="divider"></div>
+  <div class="yt-time-item">
+    <span class="label">Week</span>
+    <span class="value" id="yt-week">0h 0m</span>
+  </div>
+`;
+
+/* ===== Create time limit blocker overlay ===== */
+
+const blocker = document.createElement("div");
+blocker.id = "yt-time-blocker";
+blocker.innerHTML = `
+  <div class="yt-blocker-content">
+    <div class="yt-blocker-icon">⏰</div>
+    <h2>Time Limit Reached</h2>
+    <p>You've watched enough for today.<br>Take a walk to refocus.</p>
+    <div class="yt-blocker-time" id="yt-blocker-time">0h 0m 0s</div>
+  </div>
+`;
+
+/* ===== Inject into header ===== */
+
+function injectIntoHeader() {
+  const end = document.querySelector(
+    "#container.ytd-masthead #end.ytd-masthead"
+  );
+
+  if (!end) return;
+  if (end.querySelector("#yt-time-tracker")) return;
+
+  end.prepend(tracker);
+}
+
+injectIntoHeader();
+
+// YouTube is an SPA — re-inject on navigation and apply blocking
+const observer = new MutationObserver((mutations) => {
+  injectIntoHeader();
+  updateEndScreen();
+  
+  // Check new nodes for blocking
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      if (node instanceof HTMLElement) {
+        if (shouldRemoveNode(node)) {
+          node.remove();
+        } else {
+          sweepAndRemove(node);
+        }
+      }
+    }
+  }
+});
+observer.observe(document.body, { childList: true, subtree: true });
+
+// Re-apply on SPA navigation
+let lastUrl = location.href;
+
+function onUrlChange() {
+  if (location.href === lastUrl) return;
+  lastUrl = location.href;
+  redirectIfShorts();
+  applyBlockingFeatures();
+}
+
+// Listen for YouTube's SPA navigation event
+window.addEventListener("yt-navigate-finish", onUrlChange);
+
+// Fallback polling for edge cases
+setInterval(onUrlChange, 500);
+
+/* ===== End screen timer replacement ===== */
+
+function updateEndScreen() {
+  const endScreen = document.querySelector(".ytp-fullscreen-grid-main-content");
+  if (!endScreen) return;
+  
+  // Check if we already replaced the content
+  if (endScreen.querySelector("#yt-endscreen-timer")) return;
+  
+  // Clear existing content and add timer
+  endScreen.innerHTML = `
+    <div id="yt-endscreen-timer">
+      <div class="yt-endscreen-label">Watch Time Today</div>
+      <div class="yt-endscreen-time" id="yt-endscreen-time">0h 0m 0s</div>
+    </div>
+  `;
+}
+
+/* ===== Time limit blocking ===== */
+
+let isBlocked = false;
+
+function checkTimeLimit() {
+  chrome.storage.local.get(
+    ["dailyWatch", "dailyLimit", "bonusMinutes"],
+    (data) => {
+      const todayKey = getTodayKey();
+      const watchToday = data.dailyWatch?.[todayKey] || 0;
+      const dailyLimit = data.dailyLimit || 60; // Default 60 minutes
+      const bonusMinutes = data.bonusMinutes?.[todayKey] || 0;
+      
+      const limitSeconds = (dailyLimit + bonusMinutes) * 60;
+      const shouldBlock = watchToday >= limitSeconds;
+      
+      if (shouldBlock && !isBlocked) {
+        showBlocker();
+      } else if (!shouldBlock && isBlocked) {
+        hideBlocker();
+      }
+    }
+  );
+}
+
+function showBlocker() {
+  isBlocked = true;
+  
+  // Only show on video pages
+  if (location.pathname !== "/watch") return;
+  
+  const player = document.querySelector("#movie_player");
+  if (!player) return;
+  
+  // Pause the video
+  const video = document.querySelector("video");
+  if (video) video.pause();
+  
+  // Add blocker overlay
+  if (!player.querySelector("#yt-time-blocker")) {
+    player.appendChild(blocker);
+  }
+  blocker.style.display = "flex";
+}
+
+function hideBlocker() {
+  isBlocked = false;
+  blocker.style.display = "none";
+}
+
+/* ===== Update UI every second ===== */
+
+function updateUI() {
+  chrome.storage.local.get(
+    ["dailyWatch", "dailyTotal", "weeklyWatch"],
+    (data) => {
+      const todayKey = getTodayKey();
+      const weekKey = getWeekKey();
+
+      const watchToday = data.dailyWatch?.[todayKey] || 0;
+      const totalToday = data.dailyTotal?.[todayKey] || 0;
+      const week = data.weeklyWatch?.[weekKey] || 0;
+
+      // Update header
+      const watchEl = document.getElementById("yt-watch-today");
+      const totalEl = document.getElementById("yt-total-today");
+      const weekEl = document.getElementById("yt-week");
+      
+      if (watchEl) watchEl.textContent = format(watchToday);
+      if (totalEl) totalEl.textContent = format(totalToday);
+      if (weekEl) weekEl.textContent = format(week, false);
+      
+      // Update end screen timer
+      const endScreenTime = document.getElementById("yt-endscreen-time");
+      if (endScreenTime) endScreenTime.textContent = format(watchToday);
+      
+      // Update blocker time
+      const blockerTime = document.getElementById("yt-blocker-time");
+      if (blockerTime) blockerTime.textContent = format(watchToday);
+    }
+  );
+  
+  // Check time limit
+  checkTimeLimit();
+  
+  // Check for end screen
+  updateEndScreen();
+}
+
+setInterval(updateUI, 1000);
+updateUI();
+
+/* ===== Watching detection ===== */
+
+chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
+  if (msg.type !== "YT_STATE") return;
+
+  const video = document.querySelector("video");
+
+  sendResponse({
+    visible: document.visibilityState === "visible",
+    watching:
+      location.pathname === "/watch" &&
+      video &&
+      !video.paused &&
+      !video.ended &&
+      !isBlocked
+  });
+});
+
+/* ===== Block video play when limit reached ===== */
+
+document.addEventListener("play", (e) => {
+  if (isBlocked && e.target.tagName === "VIDEO") {
+    e.target.pause();
+  }
+}, true);

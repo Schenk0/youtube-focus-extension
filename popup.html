@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>YouTube Time</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="tabs">
+      <button class="tab active" data-tab="stats">Stats</button>
+      <button class="tab" data-tab="limit">Limit</button>
+      <button class="tab" data-tab="distractions">Focus</button>
+    </div>
+
+    <!-- Stats Tab -->
+    <div class="tab-content active" id="tab-stats">
+      <div class="stat">
+        <span class="label">Watch today</span>
+        <span class="value" id="watch-today">–</span>
+      </div>
+
+      <div class="stat">
+        <span class="label">Total today</span>
+        <span class="value" id="total-today">–</span>
+      </div>
+
+      <div class="stat">
+        <span class="label">Watch this week</span>
+        <span class="value" id="watch-week">–</span>
+      </div>
+    </div>
+
+    <!-- Limit Tab -->
+    <div class="tab-content" id="tab-limit">
+      <div class="stat">
+        <span class="label">Daily limit</span>
+        <span class="value" id="daily-limit">60 min</span>
+      </div>
+
+      <div class="stat">
+        <span class="label">Remaining</span>
+        <span class="value" id="remaining">–</span>
+      </div>
+
+      <div id="limit-controls">
+        <button id="add-5-min">Just 5 more minutes</button>
+        <div class="limit-setting">
+          <label for="limit-input">Set limit:</label>
+          <input type="number" id="limit-input" min="1" max="480" />
+          <button id="save-limit">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Distractions Tab -->
+    <div class="tab-content" id="tab-distractions">
+      <div class="toggle-row">
+        <span class="toggle-label">Block side recommendations</span>
+        <label class="toggle">
+          <input type="checkbox" id="block-side" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <span class="toggle-label">Block home feed</span>
+        <label class="toggle">
+          <input type="checkbox" id="block-home" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="blocked-info">Shorts are always blocked</div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
