@@ -1,6 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Time Tracker",
+  "name": "YouTube Focus",
+  "description": "A Chrome extension that helps you stay focused on YouTube by blocking distractions and tracking your watch time.",
   "version": "1.0",
   "permissions": ["storage", "tabs"],
   "background": {
