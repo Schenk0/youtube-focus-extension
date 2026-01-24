@@ -43,6 +43,81 @@ chrome.storage.onChanged.addListener((changes) => {
   if (changes.blockSideRecommendations || changes.blockHomeRecommendations) {
     loadBlockSettings();
   }
+  if (changes.autoSpeed2x) {
+    loadSpeedSettings();
+  }
+});
+
+/* ===== Auto 2x speed settings ===== */
+
+let autoSpeed2x = false;
+let lastVideoId = null;
+let injectedScriptLoaded = false;
+
+function loadSpeedSettings() {
+  chrome.storage.local.get(["autoSpeed2x"], (data) => {
+    autoSpeed2x = data.autoSpeed2x || false;
+  });
+}
+
+loadSpeedSettings();
+
+function getVideoId() {
+  const params = new URLSearchParams(location.search);
+  return params.get("v");
+}
+
+// Inject the script that runs in page context
+function injectPageScript() {
+  if (injectedScriptLoaded) return;
+  
+  const script = document.createElement("script");
+  script.src = chrome.runtime.getURL("injected.js");
+  script.onload = function() {
+    this.remove();
+    injectedScriptLoaded = true;
+  };
+  (document.head || document.documentElement).appendChild(script);
+}
+
+// Inject early
+injectPageScript();
+
+function applyAutoSpeed() {
+  if (!autoSpeed2x) return;
+  if (location.pathname !== "/watch") return;
+  
+  const videoId = getVideoId();
+  if (!videoId) return;
+  
+  // Only apply once per video
+  if (videoId === lastVideoId) return;
+  
+  const video = document.querySelector("video");
+  if (!video) return;
+  
+  lastVideoId = videoId;
+  
+  // Dispatch event to trigger the injected script
+  window.dispatchEvent(new CustomEvent("yt-set-speed"));
+}
+
+// Apply speed when video starts playing
+document.addEventListener("play", (e) => {
+  if (e.target.tagName === "VIDEO") {
+    applyAutoSpeed();
+  }
+}, true);
+
+// Apply on URL change (SPA navigation)
+window.addEventListener("yt-navigate-finish", () => {
+  // Reset lastVideoId on navigation so speed applies to new video
+  const newVideoId = getVideoId();
+  if (newVideoId !== lastVideoId) {
+    lastVideoId = null;
+    // Try to apply speed after a short delay for new video
+    setTimeout(applyAutoSpeed, 500);
+  }
 });
 
 /* ===== Shorts blocking (always on) ===== */

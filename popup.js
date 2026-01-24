@@ -111,10 +111,11 @@ document.getElementById("save-limit").addEventListener("click", () => {
 
 function loadBlockingSettings() {
   chrome.storage.local.get(
-    ["blockSideRecommendations", "blockHomeRecommendations"],
+    ["blockSideRecommendations", "blockHomeRecommendations", "autoSpeed2x"],
     (data) => {
       document.getElementById("block-side").checked = data.blockSideRecommendations || false;
       document.getElementById("block-home").checked = data.blockHomeRecommendations || false;
+      document.getElementById("auto-speed").checked = data.autoSpeed2x || false;
     }
   );
 }
@@ -127,4 +128,8 @@ document.getElementById("block-side").addEventListener("change", (e) => {
 
 document.getElementById("block-home").addEventListener("change", (e) => {
   chrome.storage.local.set({ blockHomeRecommendations: e.target.checked });
+});
+
+document.getElementById("auto-speed").addEventListener("change", (e) => {
+  chrome.storage.local.set({ autoSpeed2x: e.target.checked });
 });
