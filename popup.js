@@ -68,6 +68,15 @@ function updatePopup() {
       const remainingSeconds = Math.max(0, totalLimit * 60 - watchToday);
       const remainingEl = document.getElementById("remaining");
       remainingEl.textContent = formatMinutes(remainingSeconds);
+
+      const addBtn = document.getElementById("add-5-min");
+      if (remainingSeconds > 0) {
+        addBtn.disabled = true;
+        addBtn.title = "You still have time left!";
+      } else {
+        addBtn.disabled = false;
+        addBtn.title = "";
+      }
       
       if (remainingSeconds === 0) {
         remainingEl.classList.add("over-limit");
@@ -81,8 +90,76 @@ function updatePopup() {
 // Initial load
 updatePopup();
 
-// Add 5 minutes button
-document.getElementById("add-5-min").addEventListener("click", () => {
+/* ===== Hold Challenge System ===== */
+
+const HOLD_DURATION = 10; // seconds
+let holdInterval = null;
+let holdProgress = 0;
+
+function showChallenge() {
+  const today = getTodayKey();
+  
+  chrome.storage.local.get(["bonusMinutes", "dailyWatch"], (data) => {
+    const bonusToday = data.bonusMinutes?.[today] || 0;
+    const watchToday = data.dailyWatch?.[today] || 0;
+    const watchMinutes = Math.floor(watchToday / 60);
+    
+    // Update big numbers
+    document.getElementById("guilt-watched").textContent = watchMinutes;
+    document.getElementById("guilt-bonus").textContent = bonusToday;
+    document.getElementById("hold-challenge").classList.remove("challenge-hidden");
+    document.getElementById("add-5-min").style.display = "none";
+    
+    // Reset progress
+    holdProgress = 0;
+    updateHoldUI();
+  });
+}
+
+function hideChallenge() {
+  document.getElementById("hold-challenge").classList.add("challenge-hidden");
+  document.getElementById("add-5-min").style.display = "block";
+  stopHold();
+}
+
+function updateHoldUI() {
+  const remaining = Math.ceil(HOLD_DURATION - holdProgress);
+  document.getElementById("hold-timer").textContent = `${remaining}s`;
+  document.getElementById("progress-fill").style.width = `${(holdProgress / HOLD_DURATION) * 100}%`;
+  
+  const btn = document.getElementById("hold-btn");
+  if (holdProgress > 0) {
+    btn.classList.add("holding");
+  } else {
+    btn.classList.remove("holding");
+  }
+}
+
+function startHold() {
+  if (holdInterval) return;
+  
+  holdInterval = setInterval(() => {
+    holdProgress += 0.1;
+    updateHoldUI();
+    
+    if (holdProgress >= HOLD_DURATION) {
+      // Success! Add the bonus time
+      stopHold();
+      addBonusMinutes();
+    }
+  }, 100);
+}
+
+function stopHold() {
+  if (holdInterval) {
+    clearInterval(holdInterval);
+    holdInterval = null;
+  }
+  holdProgress = 0;
+  updateHoldUI();
+}
+
+function addBonusMinutes() {
   const today = getTodayKey();
   
   chrome.storage.local.get(["bonusMinutes"], (data) => {
@@ -91,8 +168,49 @@ document.getElementById("add-5-min").addEventListener("click", () => {
     
     chrome.storage.local.set({ bonusMinutes }, () => {
       updatePopup();
+      hideChallenge();
     });
   });
+}
+
+// Add 5 minutes button - now shows the challenge
+document.getElementById("add-5-min").addEventListener("click", () => {
+  showChallenge();
+});
+
+// Remove 5 minutes button - instant, no challenge needed
+document.getElementById("remove-5-min").addEventListener("click", () => {
+  const today = getTodayKey();
+  
+  chrome.storage.local.get(["bonusMinutes"], (data) => {
+    const bonusMinutes = data.bonusMinutes || {};
+    const current = bonusMinutes[today] || 0;
+    bonusMinutes[today] = Math.max(0, current - 5);
+    
+    chrome.storage.local.set({ bonusMinutes }, () => {
+      updatePopup();
+    });
+  });
+});
+
+// Hold button events
+const holdBtn = document.getElementById("hold-btn");
+
+holdBtn.addEventListener("mousedown", startHold);
+holdBtn.addEventListener("mouseup", stopHold);
+holdBtn.addEventListener("mouseleave", stopHold);
+
+// Touch support
+holdBtn.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  startHold();
+});
+holdBtn.addEventListener("touchend", stopHold);
+holdBtn.addEventListener("touchcancel", stopHold);
+
+// Cancel button
+document.getElementById("hold-cancel").addEventListener("click", () => {
+  hideChallenge();
 });
 
 // Save limit button

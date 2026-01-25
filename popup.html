@@ -44,6 +44,28 @@
 
       <div id="limit-controls">
         <button id="add-5-min">Just 5 more minutes</button>
+        <button id="remove-5-min">Remove 5 minutes</button>
+        
+        <!-- Hold to unlock -->
+        <div id="hold-challenge" class="challenge-hidden">
+          <div class="guilt-stats">
+            <div class="guilt-stat">
+              <span class="guilt-number" id="guilt-watched">0</span>
+              <span class="guilt-label">min watched today</span>
+            </div>
+            <div class="guilt-stat">
+              <span class="guilt-number" id="guilt-bonus">0</span>
+              <span class="guilt-label">bonus min added</span>
+            </div>
+          </div>
+          <button id="hold-btn">Hold to unlock</button>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <p class="hold-timer" id="hold-timer">10s</p>
+          <button id="hold-cancel">Nevermind, I'll do something else</button>
+        </div>
+        
         <div class="limit-setting">
           <label for="limit-input">Set limit:</label>
           <input type="number" id="limit-input" min="1" max="480" />

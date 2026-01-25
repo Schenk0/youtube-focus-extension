@@ -83,6 +83,28 @@ body {
   background: #ff6666;
 }
 
+#add-5-min:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
+
+#remove-5-min {
+  width: 100%;
+  padding: 6px;
+  background: #222;
+  color: #888;
+  border: 1px solid #333;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+#remove-5-min:hover {
+  background: #333;
+  color: #aaa;
+}
+
 .limit-setting {
   display: flex;
   align-items: center;
@@ -183,4 +205,110 @@ body {
   opacity: 0.5;
   margin-top: 8px;
   text-align: center;
+}
+
+/* ===== Hold Challenge ===== */
+
+#hold-challenge {
+  background: #1a1a1a;
+  border: 2px solid #ff4444;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.challenge-hidden {
+  display: none !important;
+}
+
+.guilt-stats {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 12px;
+}
+
+.guilt-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.guilt-number {
+  font-size: 32px;
+  font-weight: bold;
+  color: #ff4444;
+  line-height: 1;
+}
+
+.guilt-label {
+  font-size: 10px;
+  color: #888;
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+
+#hold-btn {
+  width: 100%;
+  padding: 12px;
+  background: #333;
+  color: #888;
+  border: 2px solid #444;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+#hold-btn:active {
+  background: #ff4444;
+  color: white;
+  border-color: #ff6666;
+}
+
+#hold-btn.holding {
+  background: #ff4444;
+  color: white;
+  border-color: #ff6666;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #ff4444, #ff8844);
+  border-radius: 3px;
+  transition: width 0.1s linear;
+}
+
+.hold-timer {
+  font-size: 24px;
+  font-weight: bold;
+  color: #666;
+  margin: 8px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+#hold-cancel {
+  padding: 8px 12px;
+  background: none;
+  color: #666;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+#hold-cancel:hover {
+  color: #999;
 }
