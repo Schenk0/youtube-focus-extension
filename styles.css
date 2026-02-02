@@ -103,6 +103,12 @@
   color: #ff4444;
 }
 
+.yt-blocker-hint {
+  font-size: 14px !important;
+  opacity: 0.5 !important;
+  margin-top: 32px !important;
+}
+
 /* ===== Home feed blocked message ===== */
 
 #yt-home-blocked {

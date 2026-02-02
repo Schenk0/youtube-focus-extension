@@ -46,6 +46,10 @@ chrome.storage.onChanged.addListener((changes) => {
   if (changes.autoSpeed2x) {
     loadSpeedSettings();
   }
+  if (changes.allowedVideo) {
+    // Immediately re-check time limit when allowed video changes
+    checkTimeLimit();
+  }
 });
 
 /* ===== Auto 2x speed settings ===== */
@@ -294,7 +298,7 @@ blocker.innerHTML = `
   <div class="yt-blocker-content">
     <div class="yt-blocker-icon">⏰</div>
     <h2>Time Limit Reached</h2>
-    <p>You've watched enough for today.<br>Take a walk to refocus.</p>
+    <p>You've watched enough for today.<br>Take a break to refocus.</p>
     <div class="yt-blocker-time" id="yt-blocker-time">0h 0m 0s</div>
   </div>
 `;
@@ -318,6 +322,7 @@ injectIntoHeader();
 const observer = new MutationObserver((mutations) => {
   injectIntoHeader();
   updateEndScreen();
+  tryShowBlockerIfNeeded();
   
   // Check new nodes for blocking
   for (const mutation of mutations) {
@@ -334,6 +339,23 @@ const observer = new MutationObserver((mutations) => {
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
+// Try to show blocker if we should be blocked but overlay isn't showing yet
+function tryShowBlockerIfNeeded() {
+  if (location.pathname !== "/watch") return;
+  
+  const player = document.querySelector("#movie_player");
+  if (!player) return;
+  
+  // If blocker should be shown but isn't attached yet, re-check time limit
+  if (!player.querySelector("#yt-time-blocker")) {
+    try {
+      checkTimeLimit();
+    } catch (e) {
+      // Extension context may be invalidated after reload
+    }
+  }
+}
+
 // Re-apply on SPA navigation
 let lastUrl = location.href;
 
@@ -342,6 +364,9 @@ function onUrlChange() {
   lastUrl = location.href;
   redirectIfShorts();
   applyBlockingFeatures();
+  
+  // Re-check time limit after navigation (blocker may need to show on new page)
+  checkTimeLimit();
 }
 
 // Listen for YouTube's SPA navigation event
@@ -371,10 +396,11 @@ function updateEndScreen() {
 /* ===== Time limit blocking ===== */
 
 let isBlocked = false;
+let allowedVideoId = null;
 
 function checkTimeLimit() {
   chrome.storage.local.get(
-    ["dailyWatch", "dailyLimit", "bonusMinutes"],
+    ["dailyWatch", "dailyLimit", "bonusMinutes", "allowedVideo"],
     (data) => {
       const todayKey = getTodayKey();
       const watchToday = data.dailyWatch?.[todayKey] || 0;
@@ -382,9 +408,26 @@ function checkTimeLimit() {
       const bonusMinutes = data.bonusMinutes?.[todayKey] || 0;
       
       const limitSeconds = (dailyLimit + bonusMinutes) * 60;
-      const shouldBlock = watchToday >= limitSeconds;
+      const overLimit = watchToday >= limitSeconds;
       
-      if (shouldBlock && !isBlocked) {
+      // Check if current video is the allowed one
+      const currentVideoId = getVideoId();
+      const allowedVideo = data.allowedVideo;
+      const isAllowedVideo = allowedVideo && 
+        allowedVideo.date === todayKey && 
+        allowedVideo.videoId === currentVideoId;
+      
+      // Update our local tracking
+      allowedVideoId = (allowedVideo?.date === todayKey) ? allowedVideo.videoId : null;
+      
+      // Block if over limit AND not watching the allowed video
+      const shouldBlock = overLimit && !isAllowedVideo;
+      
+      // Check if overlay is actually rendered (not just isBlocked flag)
+      const player = document.querySelector("#movie_player");
+      const overlayVisible = player?.querySelector("#yt-time-blocker")?.style.display === "flex";
+      
+      if (shouldBlock && (!isBlocked || (location.pathname === "/watch" && !overlayVisible))) {
         showBlocker();
       } else if (!shouldBlock && isBlocked) {
         hideBlocker();
@@ -394,28 +437,50 @@ function checkTimeLimit() {
 }
 
 function showBlocker() {
-  isBlocked = true;
-  
   // Only show on video pages
-  if (location.pathname !== "/watch") return;
+  if (location.pathname !== "/watch") {
+    isBlocked = true; // Still mark as blocked to prevent video play
+    return;
+  }
   
   const player = document.querySelector("#movie_player");
-  if (!player) return;
+  if (!player) {
+    // Player not ready yet - don't set isBlocked so we retry next tick
+    return;
+  }
+  
+  isBlocked = true;
   
   // Pause the video
   const video = document.querySelector("video");
   if (video) video.pause();
   
-  // Add blocker overlay
-  if (!player.querySelector("#yt-time-blocker")) {
-    player.appendChild(blocker);
+  // Check if blocker is already in this player
+  let existingBlocker = player.querySelector("#yt-time-blocker");
+  if (!existingBlocker) {
+    // Create fresh blocker element (old one may have been removed during SPA navigation)
+    const newBlocker = document.createElement("div");
+    newBlocker.id = "yt-time-blocker";
+    newBlocker.innerHTML = `
+      <div class="yt-blocker-content">
+        <div class="yt-blocker-icon">⏰</div>
+        <h2>Time Limit Reached</h2>
+        <p>You've watched enough for today.<br>Take a break to refocus.</p>
+        <div class="yt-blocker-time" id="yt-blocker-time">0h 0m 0s</div>
+      </div>
+    `;
+    player.appendChild(newBlocker);
+    existingBlocker = newBlocker;
   }
-  blocker.style.display = "flex";
+  existingBlocker.style.display = "flex";
 }
 
 function hideBlocker() {
   isBlocked = false;
-  blocker.style.display = "none";
+  const existingBlocker = document.querySelector("#yt-time-blocker");
+  if (existingBlocker) {
+    existingBlocker.style.display = "none";
+  }
 }
 
 /* ===== Update UI every second ===== */
@@ -457,25 +522,43 @@ function updateUI() {
   updateEndScreen();
 }
 
-setInterval(updateUI, 1000);
-updateUI();
+setInterval(() => {
+  try {
+    updateUI();
+  } catch (e) {
+    // Extension context may be invalidated after reload
+  }
+}, 1000);
+
+try {
+  updateUI();
+} catch (e) {
+  // Extension context may be invalidated after reload
+}
 
 /* ===== Watching detection ===== */
 
 chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
-  if (msg.type !== "YT_STATE") return;
+  if (msg.type === "YT_STATE") {
+    const video = document.querySelector("video");
 
-  const video = document.querySelector("video");
-
-  sendResponse({
-    visible: document.visibilityState === "visible",
-    watching:
-      location.pathname === "/watch" &&
-      video &&
-      !video.paused &&
-      !video.ended &&
-      !isBlocked
-  });
+    sendResponse({
+      visible: document.visibilityState === "visible",
+      watching:
+        location.pathname === "/watch" &&
+        video &&
+        !video.paused &&
+        !video.ended &&
+        !isBlocked
+    });
+    return;
+  }
+  
+  if (msg.type === "GET_VIDEO_ID") {
+    const params = new URLSearchParams(location.search);
+    sendResponse({ videoId: params.get("v") });
+    return;
+  }
 });
 
 /* ===== Block video play when limit reached ===== */
@@ -485,3 +568,58 @@ document.addEventListener("play", (e) => {
     e.target.pause();
   }
 }, true);
+
+/* ===== Clear allowed video when it ends ===== */
+
+function setupVideoEndListener() {
+  const video = document.querySelector("video");
+  if (!video) return;
+  
+  // Remove existing listener to avoid duplicates
+  video.removeEventListener("ended", onVideoEnded);
+  video.addEventListener("ended", onVideoEnded);
+}
+
+function onVideoEnded() {
+  const currentVideoId = getVideoId();
+  
+  // If the ended video is the allowed video, clear the permission
+  if (allowedVideoId && currentVideoId === allowedVideoId) {
+    chrome.storage.local.remove("allowedVideo", () => {
+      allowedVideoId = null;
+      // Re-check limit which will now block since permission is cleared
+      checkTimeLimit();
+    });
+  }
+}
+
+// Set up listener when video element is available
+const videoObserver = new MutationObserver(() => {
+  setupVideoEndListener();
+});
+videoObserver.observe(document.body, { childList: true, subtree: true });
+setupVideoEndListener();
+
+/* ===== Clear allowed video on navigation to different video ===== */
+
+let lastAllowedCheckVideoId = null;
+
+function checkVideoChange() {
+  const currentVideoId = getVideoId();
+  
+  // If we have an allowed video and we're now on a different video, clear permission
+  if (allowedVideoId && currentVideoId && currentVideoId !== allowedVideoId) {
+    chrome.storage.local.remove("allowedVideo", () => {
+      allowedVideoId = null;
+      checkTimeLimit();
+    });
+  }
+  
+  lastAllowedCheckVideoId = currentVideoId;
+}
+
+// Check on SPA navigation
+window.addEventListener("yt-navigate-finish", checkVideoChange);
+
+// Also check periodically as a fallback
+setInterval(checkVideoChange, 1000);

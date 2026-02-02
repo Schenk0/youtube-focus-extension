@@ -43,8 +43,7 @@
       </div>
 
       <div id="limit-controls">
-        <button id="add-5-min">Just 5 more minutes</button>
-        <button id="remove-5-min">Remove 5 minutes</button>
+        <button id="just-this-video">Just this video</button>
         
         <!-- Hold to unlock -->
         <div id="hold-challenge" class="challenge-hidden">
@@ -55,7 +54,7 @@
             </div>
             <div class="guilt-stat">
               <span class="guilt-number" id="guilt-bonus">0</span>
-              <span class="guilt-label">bonus min added</span>
+              <span class="guilt-label">times used today</span>
             </div>
           </div>
           <button id="hold-btn">Hold to unlock</button>
@@ -70,6 +69,7 @@
           <label for="limit-input">Set limit:</label>
           <input type="number" id="limit-input" min="1" max="480" />
           <button id="save-limit">Save</button>
+          <p id="limit-cooldown" class="limit-cooldown hidden"></p>
         </div>
       </div>
     </div>

@@ -42,9 +42,18 @@ function getWeekKey() {
   return `${firstThursday.getFullYear()}-W${String(weekNumber).padStart(2, "0")}`;
 }
 
+function formatCooldown(ms) {
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+}
+
 function updatePopup() {
   chrome.storage.local.get(
-    ["dailyWatch", "dailyTotal", "weeklyWatch", "dailyLimit", "bonusMinutes"],
+    ["dailyWatch", "dailyTotal", "weeklyWatch", "dailyLimit", "bonusMinutes", "limitLastChanged"],
     (data) => {
       const today = getTodayKey();
       const week = getWeekKey();
@@ -64,18 +73,40 @@ function updatePopup() {
       document.getElementById("daily-limit").textContent = `${totalLimit} min`;
       document.getElementById("limit-input").value = dailyLimit;
       
+      // Limit cooldown (24 hours)
+      const COOLDOWN_MS = 24 * 60 * 60 * 1000;
+      const lastChanged = data.limitLastChanged || 0;
+      const timeSinceChange = Date.now() - lastChanged;
+      const onCooldown = timeSinceChange < COOLDOWN_MS;
+      
+      const saveBtn = document.getElementById("save-limit");
+      const limitInput = document.getElementById("limit-input");
+      const cooldownEl = document.getElementById("limit-cooldown");
+      
+      if (onCooldown) {
+        const remainingCooldown = COOLDOWN_MS - timeSinceChange;
+        saveBtn.disabled = true;
+        limitInput.disabled = true;
+        cooldownEl.textContent = `Can change in ${formatCooldown(remainingCooldown)}`;
+        cooldownEl.classList.remove("hidden");
+      } else {
+        saveBtn.disabled = false;
+        limitInput.disabled = false;
+        cooldownEl.classList.add("hidden");
+      }
+      
       // Remaining time
       const remainingSeconds = Math.max(0, totalLimit * 60 - watchToday);
       const remainingEl = document.getElementById("remaining");
       remainingEl.textContent = formatMinutes(remainingSeconds);
 
-      const addBtn = document.getElementById("add-5-min");
+      const justThisVideoBtn = document.getElementById("just-this-video");
       if (remainingSeconds > 0) {
-        addBtn.disabled = true;
-        addBtn.title = "You still have time left!";
+        justThisVideoBtn.disabled = true;
+        justThisVideoBtn.title = "You still have time left!";
       } else {
-        addBtn.disabled = false;
-        addBtn.title = "";
+        justThisVideoBtn.disabled = false;
+        justThisVideoBtn.title = "";
       }
       
       if (remainingSeconds === 0) {
@@ -99,16 +130,16 @@ let holdProgress = 0;
 function showChallenge() {
   const today = getTodayKey();
   
-  chrome.storage.local.get(["bonusMinutes", "dailyWatch"], (data) => {
-    const bonusToday = data.bonusMinutes?.[today] || 0;
+  chrome.storage.local.get(["allowedVideo", "dailyWatch"], (data) => {
     const watchToday = data.dailyWatch?.[today] || 0;
     const watchMinutes = Math.floor(watchToday / 60);
+    const timesUsedToday = data.allowedVideo?.date === today ? 1 : 0;
     
     // Update big numbers
     document.getElementById("guilt-watched").textContent = watchMinutes;
-    document.getElementById("guilt-bonus").textContent = bonusToday;
+    document.getElementById("guilt-bonus").textContent = timesUsedToday;
     document.getElementById("hold-challenge").classList.remove("challenge-hidden");
-    document.getElementById("add-5-min").style.display = "none";
+    document.getElementById("just-this-video").style.display = "none";
     
     // Reset progress
     holdProgress = 0;
@@ -118,7 +149,7 @@ function showChallenge() {
 
 function hideChallenge() {
   document.getElementById("hold-challenge").classList.add("challenge-hidden");
-  document.getElementById("add-5-min").style.display = "block";
+  document.getElementById("just-this-video").style.display = "block";
   stopHold();
 }
 
@@ -143,9 +174,9 @@ function startHold() {
     updateHoldUI();
     
     if (holdProgress >= HOLD_DURATION) {
-      // Success! Add the bonus time
+      // Success! Allow this video to finish
       stopHold();
-      addBonusMinutes();
+      allowCurrentVideo();
     }
   }, 100);
 }
@@ -159,38 +190,43 @@ function stopHold() {
   updateHoldUI();
 }
 
-function addBonusMinutes() {
-  const today = getTodayKey();
-  
-  chrome.storage.local.get(["bonusMinutes"], (data) => {
-    const bonusMinutes = data.bonusMinutes || {};
-    bonusMinutes[today] = (bonusMinutes[today] || 0) + 5;
-    
-    chrome.storage.local.set({ bonusMinutes }, () => {
-      updatePopup();
+function allowCurrentVideo() {
+  // Get the current active YouTube tab and ask for the video ID
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    if (!tab?.url?.includes("youtube.com/watch")) {
+      alert("Please navigate to a YouTube video first!");
       hideChallenge();
+      return;
+    }
+    
+    // Ask content script for video ID
+    chrome.tabs.sendMessage(tab.id, { type: "GET_VIDEO_ID" }, (response) => {
+      if (chrome.runtime.lastError || !response?.videoId) {
+        alert("Couldn't detect the video. Please try again.");
+        hideChallenge();
+        return;
+      }
+      
+      const today = getTodayKey();
+      
+      // Store the allowed video
+      chrome.storage.local.set({
+        allowedVideo: {
+          videoId: response.videoId,
+          date: today
+        }
+      }, () => {
+        updatePopup();
+        hideChallenge();
+      });
     });
   });
 }
 
-// Add 5 minutes button - now shows the challenge
-document.getElementById("add-5-min").addEventListener("click", () => {
+// "Just this video" button - shows the challenge
+document.getElementById("just-this-video").addEventListener("click", () => {
   showChallenge();
-});
-
-// Remove 5 minutes button - instant, no challenge needed
-document.getElementById("remove-5-min").addEventListener("click", () => {
-  const today = getTodayKey();
-  
-  chrome.storage.local.get(["bonusMinutes"], (data) => {
-    const bonusMinutes = data.bonusMinutes || {};
-    const current = bonusMinutes[today] || 0;
-    bonusMinutes[today] = Math.max(0, current - 5);
-    
-    chrome.storage.local.set({ bonusMinutes }, () => {
-      updatePopup();
-    });
-  });
 });
 
 // Hold button events
@@ -219,7 +255,10 @@ document.getElementById("save-limit").addEventListener("click", () => {
   const newLimit = parseInt(limitInput.value, 10);
   
   if (newLimit > 0 && newLimit <= 480) {
-    chrome.storage.local.set({ dailyLimit: newLimit }, () => {
+    chrome.storage.local.set({ 
+      dailyLimit: newLimit,
+      limitLastChanged: Date.now()
+    }, () => {
       updatePopup();
     });
   }

@@ -66,7 +66,7 @@ body {
   margin-top: 12px;
 }
 
-#add-5-min {
+#just-this-video {
   width: 100%;
   padding: 8px;
   background: #ff4444;
@@ -79,35 +79,19 @@ body {
   margin-bottom: 10px;
 }
 
-#add-5-min:hover {
+#just-this-video:hover {
   background: #ff6666;
 }
 
-#add-5-min:disabled {
+#just-this-video:disabled {
   background: #555;
   cursor: not-allowed;
-}
-
-#remove-5-min {
-  width: 100%;
-  padding: 6px;
-  background: #222;
-  color: #888;
-  border: 1px solid #333;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  margin-bottom: 10px;
-}
-
-#remove-5-min:hover {
-  background: #333;
-  color: #aaa;
 }
 
 .limit-setting {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   font-size: 12px;
 }
@@ -138,6 +122,31 @@ body {
 
 #save-limit:hover {
   background: #444;
+}
+
+#save-limit:disabled {
+  background: #222;
+  color: #555;
+  cursor: not-allowed;
+}
+
+#limit-input:disabled {
+  background: #1a1a1a;
+  color: #555;
+  cursor: not-allowed;
+}
+
+.limit-cooldown {
+  width: 100%;
+  margin-top: 6px;
+  margin-bottom: 0px;
+  font-size: 11px;
+  color: #ff4444;
+  text-align: center;
+}
+
+.hidden {
+  display: none;
 }
 
 .over-limit {
