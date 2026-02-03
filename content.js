@@ -24,7 +24,25 @@ function getWeekKey() {
 
 let isBlocked = false;
 let allowedVideoId = null;
+let allowedTabId = null;
+let currentTabId = null;
 let wasHiddenRecently = false;
+
+function requestTabId() {
+  if (currentTabId !== null) return;
+  try {
+    chrome.runtime.sendMessage({ type: "GET_TAB_ID" }, (response) => {
+      if (chrome.runtime.lastError) return;
+      if (typeof response?.tabId === "number") {
+        currentTabId = response.tabId;
+      }
+    });
+  } catch (e) {
+    // Extension context may be invalidated after reload
+  }
+}
+
+requestTabId();
 
 // Track visibility changes to avoid race conditions when switching tabs
 document.addEventListener("visibilitychange", () => {
@@ -86,6 +104,15 @@ loadSpeedSettings();
 function getVideoId() {
   const params = new URLSearchParams(location.search);
   return params.get("v");
+}
+
+function isAllowedVideoForTab(currentVideoId) {
+  if (!allowedVideoId || !currentVideoId || allowedVideoId !== currentVideoId) {
+    return false;
+  }
+  if (!allowedTabId) return true;
+  if (!currentTabId) return true;
+  return allowedTabId === currentTabId;
 }
 
 // Inject the script that runs in page context
@@ -369,7 +396,9 @@ function tryShowBlockerIfNeeded() {
   
   // If blocker should be shown but isn't attached yet, re-check time limit
   // But only if we're not on an allowed video
-  if (!player.querySelector("#yt-time-blocker") && !allowedVideoId) {
+  requestTabId();
+  const currentVideoId = getVideoId();
+  if (!player.querySelector("#yt-time-blocker") && !isAllowedVideoForTab(currentVideoId)) {
     try {
       checkTimeLimit();
     } catch (e) {
@@ -424,6 +453,8 @@ function checkTimeLimit() {
     return;
   }
   
+  requestTabId();
+  
   chrome.storage.local.get(
     ["dailyWatch", "dailyLimit", "bonusMinutes", "allowedVideo"],
     (data) => {
@@ -438,12 +469,13 @@ function checkTimeLimit() {
       // Check if current video is the allowed one
       const currentVideoId = getVideoId();
       const allowedVideo = data.allowedVideo;
-      const isAllowedVideo = allowedVideo && 
-        allowedVideo.date === todayKey && 
-        allowedVideo.videoId === currentVideoId;
+      const isAllowedForToday = allowedVideo?.date === todayKey;
       
       // Update our local tracking
-      allowedVideoId = (allowedVideo?.date === todayKey) ? allowedVideo.videoId : null;
+      allowedVideoId = isAllowedForToday ? allowedVideo.videoId : null;
+      allowedTabId = isAllowedForToday ? (allowedVideo.tabId ?? null) : null;
+      
+      const isAllowedVideo = isAllowedForToday && isAllowedVideoForTab(currentVideoId);
       
       // Block if over limit AND not watching the allowed video
       const shouldBlock = overLimit && !isAllowedVideo;
@@ -610,12 +642,16 @@ function setupVideoEndListener() {
 }
 
 function onVideoEnded() {
+  requestTabId();
   const currentVideoId = getVideoId();
+  const isSameAllowedTab =
+    !allowedTabId || (currentTabId && allowedTabId === currentTabId);
   
   // If the ended video is the allowed video, clear the permission
-  if (allowedVideoId && currentVideoId === allowedVideoId) {
+  if (allowedVideoId && currentVideoId === allowedVideoId && isSameAllowedTab) {
     chrome.storage.local.remove("allowedVideo", () => {
       allowedVideoId = null;
+      allowedTabId = null;
       // Re-check limit which will now block since permission is cleared
       checkTimeLimit();
     });
@@ -634,12 +670,22 @@ setupVideoEndListener();
 let lastAllowedCheckVideoId = null;
 
 function checkVideoChange() {
+  requestTabId();
   const currentVideoId = getVideoId();
+  const isSameAllowedTab = allowedTabId
+    ? currentTabId && allowedTabId === currentTabId
+    : lastAllowedCheckVideoId === allowedVideoId;
   
   // If we have an allowed video and we're now on a different video, clear permission
-  if (allowedVideoId && currentVideoId && currentVideoId !== allowedVideoId) {
+  if (
+    allowedVideoId &&
+    currentVideoId &&
+    currentVideoId !== allowedVideoId &&
+    isSameAllowedTab
+  ) {
     chrome.storage.local.remove("allowedVideo", () => {
       allowedVideoId = null;
+      allowedTabId = null;
       checkTimeLimit();
     });
   }

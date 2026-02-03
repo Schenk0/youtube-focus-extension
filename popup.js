@@ -214,7 +214,8 @@ function allowCurrentVideo() {
       chrome.storage.local.set({
         allowedVideo: {
           videoId: response.videoId,
-          date: today
+          date: today,
+          tabId: tab.id
         }
       }, () => {
         updatePopup();

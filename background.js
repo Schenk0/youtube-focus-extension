@@ -71,3 +71,9 @@ setInterval(() => {
     );
   });
 }, 1000);
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === "GET_TAB_ID") {
+    sendResponse({ tabId: sender.tab?.id ?? null });
+  }
+});
