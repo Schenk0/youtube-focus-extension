@@ -20,6 +20,23 @@ function getWeekKey() {
   return `${firstThursday.getFullYear()}-W${String(weekNumber).padStart(2, "0")}`;
 }
 
+/* ===== Time limit blocking state (declared early for use throughout) ===== */
+
+let isBlocked = false;
+let allowedVideoId = null;
+let wasHiddenRecently = false;
+
+// Track visibility changes to avoid race conditions when switching tabs
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    wasHiddenRecently = true;
+    // Clear the flag after a short delay
+    setTimeout(() => {
+      wasHiddenRecently = false;
+    }, 500);
+  }
+});
+
 /* ===== Blocking settings ===== */
 
 let blockSettings = {
@@ -343,11 +360,16 @@ observer.observe(document.body, { childList: true, subtree: true });
 function tryShowBlockerIfNeeded() {
   if (location.pathname !== "/watch") return;
   
+  // Don't aggressively re-show blocker right after tab becomes visible
+  // This prevents flickering when switching tabs with "just this video" active
+  if (wasHiddenRecently) return;
+  
   const player = document.querySelector("#movie_player");
   if (!player) return;
   
   // If blocker should be shown but isn't attached yet, re-check time limit
-  if (!player.querySelector("#yt-time-blocker")) {
+  // But only if we're not on an allowed video
+  if (!player.querySelector("#yt-time-blocker") && !allowedVideoId) {
     try {
       checkTimeLimit();
     } catch (e) {
@@ -395,10 +417,13 @@ function updateEndScreen() {
 
 /* ===== Time limit blocking ===== */
 
-let isBlocked = false;
-let allowedVideoId = null;
-
 function checkTimeLimit() {
+  // Skip aggressive re-blocking right after tab becomes visible again
+  // This prevents the blocker from re-appearing due to DOM changes during tab switch
+  if (wasHiddenRecently && isBlocked === false && allowedVideoId) {
+    return;
+  }
+  
   chrome.storage.local.get(
     ["dailyWatch", "dailyLimit", "bonusMinutes", "allowedVideo"],
     (data) => {
@@ -427,6 +452,8 @@ function checkTimeLimit() {
       const player = document.querySelector("#movie_player");
       const overlayVisible = player?.querySelector("#yt-time-blocker")?.style.display === "flex";
       
+      // Only show blocker if we should block AND (not currently blocked OR overlay is missing on watch page)
+      // But don't aggressively re-show if we're on an allowed video
       if (shouldBlock && (!isBlocked || (location.pathname === "/watch" && !overlayVisible))) {
         showBlocker();
       } else if (!shouldBlock && isBlocked) {
@@ -515,8 +542,10 @@ function updateUI() {
     }
   );
   
-  // Check time limit
-  checkTimeLimit();
+  // Check time limit (but respect the visibility debounce)
+  if (!wasHiddenRecently || !allowedVideoId) {
+    checkTimeLimit();
+  }
   
   // Check for end screen
   updateEndScreen();
