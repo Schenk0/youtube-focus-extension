@@ -92,6 +92,7 @@ chrome.storage.onChanged.addListener((changes) => {
 let autoSpeed2x = false;
 let lastVideoId = null;
 let injectedScriptLoaded = false;
+let adObserver = null;
 
 function loadSpeedSettings() {
   chrome.storage.local.get(["autoSpeed2x"], (data) => {
@@ -104,6 +105,11 @@ loadSpeedSettings();
 function getVideoId() {
   const params = new URLSearchParams(location.search);
   return params.get("v");
+}
+
+function isAdPlaying() {
+  const player = document.querySelector("#movie_player");
+  return player?.classList.contains("ad-showing") ?? false;
 }
 
 function isAllowedVideoForTab(currentVideoId) {
@@ -131,6 +137,27 @@ function injectPageScript() {
 // Inject early
 injectPageScript();
 
+function dispatchSetSpeed() {
+  window.dispatchEvent(new CustomEvent("yt-set-speed"));
+}
+
+function watchForAdEnd() {
+  if (adObserver) return;
+
+  const player = document.querySelector("#movie_player");
+  if (!player) return;
+
+  adObserver = new MutationObserver(() => {
+    if (!isAdPlaying()) {
+      adObserver.disconnect();
+      adObserver = null;
+      setTimeout(dispatchSetSpeed, 300);
+    }
+  });
+
+  adObserver.observe(player, { attributes: true, attributeFilter: ["class"] });
+}
+
 function applyAutoSpeed() {
   if (!autoSpeed2x) return;
   if (location.pathname !== "/watch") return;
@@ -145,9 +172,13 @@ function applyAutoSpeed() {
   if (!video) return;
   
   lastVideoId = videoId;
+
+  if (isAdPlaying()) {
+    watchForAdEnd();
+    return;
+  }
   
-  // Dispatch event to trigger the injected script
-  window.dispatchEvent(new CustomEvent("yt-set-speed"));
+  dispatchSetSpeed();
 }
 
 // Apply speed when video starts playing
@@ -159,11 +190,9 @@ document.addEventListener("play", (e) => {
 
 // Apply on URL change (SPA navigation)
 window.addEventListener("yt-navigate-finish", () => {
-  // Reset lastVideoId on navigation so speed applies to new video
   const newVideoId = getVideoId();
   if (newVideoId !== lastVideoId) {
     lastVideoId = null;
-    // Try to apply speed after a short delay for new video
     setTimeout(applyAutoSpeed, 500);
   }
 });
